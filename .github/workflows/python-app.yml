@@ -1,0 +1,91 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+import matplotlib.pyplot as plt
+
+# Passo 1: Coleta de Dados
+data = yf.download('SANB11.SA', start='2013-01-01', end='2023-12-31')
+data.to_csv('santander.csv')
+print(data.head())
+
+# Passo 2: Preparação dos Dados
+# Carregando os dados
+data = pd.read_csv('santander.csv', index_col='Date', parse_dates=True)
+
+# Apenas a coluna 'Close' para simplificar
+data = data[['Close']]
+
+# Normalizando os dados
+scaler = MinMaxScaler(feature_range=(0, 1))
+data_scaled = scaler.fit_transform(data)
+
+# Criando sequências de dados para o modelo LSTM
+def create_sequences(data, seq_length):
+    X, y = [], []
+    for i in range(len(data) - seq_length):
+        X.append(data[i:i + seq_length])
+        y.append(data[i + seq_length])
+    return np.array(X), np.array(y)
+
+seq_length = 60
+X, y = create_sequences(data_scaled, seq_length)
+
+# Dividindo os dados em treino e teste
+train_size = int(len(X) * 0.8)
+X_train, y_train = X[:train_size], y[:train_size]
+X_test, y_test = X[train_size:], y[train_size:]
+
+print(f'X_train shape: {X_train.shape}, y_train shape: {y_train.shape}')
+print(f'X_test shape: {X_test.shape}, y_test shape: {y_test.shape}')
+
+# Passo 3: Construção do Modelo
+model = Sequential()
+model.add(LSTM(50, return_sequences=True, input_shape=(seq_length, 1)))
+model.add(LSTM(50))
+model.add(Dense(1))
+
+model.compile(optimizer='adam', loss='mean_squared_error')
+print(model.summary())
+
+# Passo 4: Treinamento do Modelo
+history = model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_test, y_test))
+
+# Salvando o modelo treinado
+model.save('Santander_lstm_model.h5')
+
+# Passo 5: Avaliação e Previsão
+# Avaliando o modelo
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+epochs = range(1, len(loss) + 1)
+
+plt.figure(figsize=(10, 6))
+plt.plot(epochs, loss, 'b', label='Training loss')
+plt.plot(epochs, val_loss, 'r', label='Validation loss')
+plt.title('Training and Validation Loss')
+plt.legend()
+plt.show()
+
+# Fazendo previsões
+predictions = model.predict(X_test)
+predictions = scaler.inverse_transform(predictions)
+y_test = scaler.inverse_transform(y_test)
+
+# Plotando as previsões vs. valores reais
+plt.figure(figsize=(10, 6))
+plt.plot(data.index[-len(y_test):], y_test, 'b', label='Real Prices')
+plt.plot(data.index[-len(predictions):], predictions, 'r', label='Predicted Prices')
+plt.title('Modelo LSTM - Previsão de Ações do Santander')
+plt.xlabel('Date')
+plt.ylabel('Price')
+plt.legend()
+plt.show()  
+
+
+#--------
+
+
+
